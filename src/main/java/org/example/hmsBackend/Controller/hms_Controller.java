@@ -224,7 +224,7 @@ public class hms_Controller {
         return new ResponseEntity<>(allRooms, HttpStatusCode.valueOf(200));
     }
 
-    @DeleteMapping("/month/{month}/year/{year}/room_no/{room_no}")
+    @DeleteMapping("/mrd/month/{month}/year/{year}/room_no/{room_no}")
     public ResponseEntity<String> deleteMRD(
             @PathVariable String month,
             @PathVariable String year,
