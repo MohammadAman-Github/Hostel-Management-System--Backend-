@@ -28,12 +28,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.time.Month;
 import java.time.YearMonth;
-import java.util.Locale;
 
 @Data
 @Service
@@ -44,6 +41,8 @@ public class hms_service implements hms_service_interface {
     roomDetailsRepository roomDetailsRepository;
     @Autowired
     MRD_repository mrd_repository;
+    @Autowired
+    org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Override
     public students createStudent(create_student_request_dto requestDto)
@@ -109,7 +108,7 @@ public class hms_service implements hms_service_interface {
 
     @Override
     public List<students> getallStudents() {
-        List<students> student = hms_repository.findAll();
+        List<students> student = hms_repository.findAllByOrderByRoomNoAscStudentIdAsc();
         return student;
     }
 
@@ -304,7 +303,7 @@ public class hms_service implements hms_service_interface {
 
     @Override
     public List<roomDetails> getallRooms() {
-        List<roomDetails> allRooms = roomDetailsRepository.findAll();
+        List<roomDetails> allRooms = roomDetailsRepository.findAllByOrderByRoomNoAsc();
         return allRooms;
     }
 
@@ -368,6 +367,9 @@ public class hms_service implements hms_service_interface {
                 room.setArrearBill(URD_Dto.getArrearBill());
             }
             room = roomDetailsRepository.save(room);
+
+            // Recalculate occupancy after room details are updated
+            updateRoomOccupancy(roomNo);
             return room;
         }
     }
@@ -382,11 +384,13 @@ public class hms_service implements hms_service_interface {
         roomDetailsRepository.delete(room);
     }
 
+
+
     @Override
     public void updateRoomOccupancy(Integer roomNo) {
 
         // count active students in the room
-        int active_Students = hms_repository.countByRoomNoAndStatus(roomNo, "Active");
+        int active_Students = hms_repository.countByRoomNoAndStatus(roomNo, "ACTIVE");
 
         // get room details
         Optional<roomDetails> roomDetails = roomDetailsRepository.findByRoomNo(roomNo);
@@ -404,15 +408,26 @@ public class hms_service implements hms_service_interface {
 
         if (active_Students == 0) {
             room.setOccupancyStatus("VACANT");
-        } else if (active_Students < total_bed) {
-            room.setOccupancyStatus("PARTIALLY OCCUPIED");
+
+        } else if (active_Students == 1) {
+            room.setOccupancyStatus("SINGLE OCCUPANCY");
+
+        } else if (active_Students == 2) {
+            room.setOccupancyStatus("DOUBLE OCCUPANCY");
+
+        } else if (active_Students == 3) {
+            room.setOccupancyStatus("TRIPLE OCCUPANCY");
+
         } else {
-            room.setOccupancyStatus("OCCUPIED");
+            // Optional: for 4 or more students
+            room.setOccupancyStatus(active_Students + " OCCUPANCY");
         }
 
-        // save updated room
         roomDetailsRepository.save(room);
+
+
     }
+
 
     @Override
     public void updateLastMeterReadingInRoomDetails(String month, String year, Integer roomNo) {
@@ -463,7 +478,7 @@ public class hms_service implements hms_service_interface {
         }
 
 
-        List<monthlyRentDetailsModel> existingMRDs = mrd_repository.findByRoomNo(MRD_DTO.getRoomNo());
+        List<monthlyRentDetailsModel> existingMRDs = mrd_repository.findByRoomNoOrderByIdAsc(MRD_DTO.getRoomNo());
 
 
         for (monthlyRentDetailsModel existingMRD : existingMRDs) {
@@ -655,7 +670,7 @@ public class hms_service implements hms_service_interface {
 
     @Override
     public List<monthly_rent_details_dto> getMrdByMonthAndYear(String month, String year) throws MRD_out_of_database {
-        List<monthlyRentDetailsModel> MRD = mrd_repository.findByMonthAndYear(month, year);
+        List<monthlyRentDetailsModel> MRD = mrd_repository.findByMonthAndYearOrderByRoomNoAsc(month, year);
         if ((MRD.isEmpty())) {
             throw new MRD_out_of_database("Data for --> " + month + " - " + year + " Not Found");
         }
@@ -687,7 +702,7 @@ public class hms_service implements hms_service_interface {
 
     @Override
     public List<monthly_rent_details_dto> getMrdByRoomNoAndYear(int room_no, String year) throws MRD_out_of_database {
-        List<monthlyRentDetailsModel> MRD = mrd_repository.findByRoomNoAndYear(room_no, year);
+        List<monthlyRentDetailsModel> MRD = mrd_repository.findByRoomNoAndYearOrderByIdAsc(room_no, year);;
         if ((MRD.isEmpty())) {
             throw new MRD_out_of_database("Data for Room No --> " + room_no + " , Year --> " + year + "  Not Found");
         }
@@ -821,7 +836,7 @@ public class hms_service implements hms_service_interface {
         // FIND REMAINING MRDs FOR THIS ROOM
         // ==========================================
 
-        List<monthlyRentDetailsModel> remainingMRDs = mrd_repository.findByRoomNo(room_no);
+        List<monthlyRentDetailsModel> remainingMRDs = mrd_repository.findByRoomNoOrderByIdAsc(room_no);
 
 
         // ==========================================
@@ -1082,4 +1097,763 @@ public class hms_service implements hms_service_interface {
             throw new RuntimeException("Unable to open PDF", e);
         }
     }
+
+    // ==========================================
+    // DATABASE BACKUP
+    // ==========================================
+
+    @Override
+    public Map<String, Object> backupDatabase() {
+
+        Map<String, Object> backup = new LinkedHashMap<>();
+
+        backup.put("database", "hms");
+        backup.put("version", 1);
+        backup.put("encrypted", false);
+        backup.put("mode", "full");
+
+
+        // ==========================================
+        // TABLES
+        // ==========================================
+
+        List<Map<String, Object>> tables = new ArrayList<>();
+
+
+        // ==========================================
+        // ROOM DETAILS
+        // ==========================================
+
+        Map<String, Object> roomTable = new LinkedHashMap<>();
+
+        roomTable.put(
+                "name",
+                "room_details"
+        );
+
+        List<Map<String, String>> roomSchema = new ArrayList<>();
+
+        roomSchema.add(Map.of(
+                "column", "room_no",
+                "value", "INTEGER PRIMARY KEY"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "room_type",
+                "value", "TEXT"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "floor",
+                "value", "INTEGER"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "beds",
+                "value", "INTEGER"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "tables",
+                "value", "INTEGER"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "chairs",
+                "value", "INTEGER"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "coolers",
+                "value", "TEXT"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "monthly_rent",
+                "value", "INTEGER"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "light_bill",
+                "value", "TEXT"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "lastMeterReading",
+                "value", "INTEGER"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "arrearBill",
+                "value", "INTEGER"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "security_amount",
+                "value", "INTEGER"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "security_amount_status",
+                "value", "TEXT"
+        ));
+
+        roomSchema.add(Map.of(
+                "column", "occupancy_status",
+                "value", "TEXT"
+        ));
+
+        roomTable.put(
+                "schema",
+                roomSchema
+        );
+
+
+        List<List<Object>> roomValues = new ArrayList<>();
+
+        for (roomDetails room : roomDetailsRepository.findAllByOrderByRoomNoAsc()) {
+
+            roomValues.add(Arrays.asList(
+                    room.roomNo,
+                    room.roomType,
+                    room.floor,
+                    room.beds,
+                    room.tables,
+                    room.chairs,
+                    room.coolers,
+                    room.monthlyRent,
+                    room.lightBill,
+                    room.lastMeterReading,
+                    room.arrearBill,
+                    room.securityAmount,
+                    room.securityAmountStatus,
+                    room.occupancyStatus
+            ));
+        }
+
+        roomTable.put(
+                "values",
+                roomValues
+        );
+
+        tables.add(roomTable);
+
+
+        // ==========================================
+        // STUDENTS
+        // ==========================================
+
+        Map<String, Object> studentsTable = new LinkedHashMap<>();
+
+        studentsTable.put(
+                "name",
+                "students"
+        );
+
+        List<Map<String, String>> studentsSchema = new ArrayList<>();
+
+        studentsSchema.add(Map.of(
+                "column", "student_id",
+                "value", "INTEGER PRIMARY KEY AUTOINCREMENT"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "student_name",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "contact_no",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "aadhar_no",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "father_name",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "father_contact",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "address_line_1",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "address_line_2",
+                "value", "TEXT"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "city",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "state",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "pincode",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "room_no",
+                "value", "INTEGER"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "joining_date",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
+                "column", "leaving_date",
+                "value", "TEXT"
+        ));
+
+        studentsSchema.add(Map.of("column", "status",
+                "value", "TEXT NOT NULL"));
+
+        studentsTable.put("schema", studentsSchema);
+
+
+        List<List<Object>> studentValues = new ArrayList<>();
+
+        for (students student : hms_repository.findAllByOrderByRoomNoAscStudentIdAsc()) {
+
+            studentValues.add(Arrays.asList(
+                    student.studentId,
+                    student.studentName,
+                    student.contactNo,
+                    student.aadharNo,
+                    student.fatherName,
+                    student.fatherContact,
+                    student.addressLine1,
+                    student.addressLine2,
+                    student.city,
+                    student.state,
+                    student.pincode,
+                    student.roomNo,
+                    student.joiningDate,
+                    student.leavingDate,
+                    student.status
+            ));
+        }
+
+        studentsTable.put("values", studentValues);
+
+        tables.add(studentsTable);
+
+
+        // ==========================================
+        // MONTHLY RENT DETAILS
+        // ==========================================
+
+        Map<String, Object> rentTable = new LinkedHashMap<>();
+
+        rentTable.put("name", "monthly_rent_details");
+
+        List<Map<String, String>> rentSchema = new ArrayList<>();
+
+        rentSchema.add(Map.of("column", "id",
+                "value", "INTEGER PRIMARY KEY AUTOINCREMENT"));
+
+        rentSchema.add(Map.of("column", "month",
+                "value", "TEXT NOT NULL"));
+
+        rentSchema.add(Map.of("column", "year",
+                "value", "TEXT NOT NULL"));
+
+        rentSchema.add(Map.of("column", "room_no",
+                "value", "INTEGER NOT NULL"));
+
+        rentSchema.add(Map.of("column", "rent",
+                "value", "INTEGER NOT NULL"));
+
+        rentSchema.add(Map.of("column", "last_reading",
+                "value", "INTEGER NOT NULL"));
+
+        rentSchema.add(Map.of("column", "current_reading",
+                "value", "INTEGER NOT NULL"));
+
+        rentSchema.add(Map.of("column", "total_light_bill",
+                "value", "INTEGER NOT NULL"));
+
+        rentSchema.add(Map.of("column", "arrear_bill",
+                "value", "INTEGER NOT NULL DEFAULT 0"));
+
+        rentSchema.add(Map.of("column", "total_rent",
+                "value", "INTEGER NOT NULL"));
+
+        rentSchema.add(Map.of("column", "total_rent_paid",
+                "value", "INTEGER DEFAULT 0"));
+
+        rentSchema.add(Map.of("column", "payment_status",
+                "value", "TEXT NOT NULL"));
+
+        rentTable.put("schema", rentSchema);
+
+
+        List<List<Object>> rentValues = new ArrayList<>();
+
+        for (monthlyRentDetailsModel rent : mrd_repository.findAllByOrderByRoomNoAscIdAsc()) {
+
+            rentValues.add(Arrays.asList(
+                    rent.Id,
+                    rent.month,
+                    rent.year,
+                    rent.roomNo,
+                    rent.rent,
+                    rent.lastReading,
+                    rent.currentReading,
+                    rent.totalLightBill,
+                    rent.arrearBill,
+                    rent.totalRent,
+                    rent.totalRentPaid,
+                    rent.paymentStatus
+            ));
+        }
+
+        rentTable.put("values", rentValues);
+
+        tables.add(rentTable);
+
+
+        // ==========================================
+        // ADD TABLES TO BACKUP
+        // ==========================================
+
+        backup.put("tables", tables);
+
+        return backup;
+    }
+
+    // ==========================================
+// DATABASE RESTORE
+// ==========================================
+
+    @Override
+    @Transactional
+    public void restoreDatabase(Map<String, Object> backupData) {
+
+        // ==========================================
+        // VALIDATE BACKUP
+        // ==========================================
+
+        if (backupData == null) {
+            throw new IllegalArgumentException(
+                    "Backup data cannot be null."
+            );
+        }
+
+        if (!"hms".equals(backupData.get("database"))) {
+            throw new IllegalArgumentException(
+                    "Invalid backup database."
+            );
+        }
+
+        Object tablesObject =
+                backupData.get("tables");
+
+        if (!(tablesObject instanceof List<?>)) {
+            throw new IllegalArgumentException(
+                    "Invalid backup: tables are missing."
+            );
+        }
+
+        List<?> tables =
+                (List<?>) tablesObject;
+
+
+        // ==========================================
+        // FIND REQUIRED TABLES
+        // ==========================================
+
+        Map<String, Object> roomTable = null;
+        Map<String, Object> studentsTable = null;
+        Map<String, Object> rentTable = null;
+
+
+        for (Object tableObject : tables) {
+
+            if (!(tableObject instanceof Map<?, ?>)) {
+                continue;
+            }
+
+            Map<?, ?> table =
+                    (Map<?, ?>) tableObject;
+
+            Object tableName =
+                    table.get("name");
+
+            if ("room_details".equals(tableName)) {
+
+                roomTable =
+                        (Map<String, Object>) table;
+
+            } else if ("students".equals(tableName)) {
+
+                studentsTable =
+                        (Map<String, Object>) table;
+
+            } else if ("monthly_rent_details".equals(tableName)) {
+
+                rentTable =
+                        (Map<String, Object>) table;
+            }
+        }
+
+
+        // ==========================================
+        // CHECK REQUIRED TABLES
+        // ==========================================
+
+        if (
+                roomTable == null ||
+                        studentsTable == null ||
+                        rentTable == null
+        ) {
+
+            throw new IllegalArgumentException(
+                    "Invalid backup: required HMS tables are missing."
+            );
+        }
+
+
+        // ==========================================
+        // GET VALUES
+        // ==========================================
+
+        List<?> roomValues =
+                getBackupValues(
+                        roomTable,
+                        "room_details"
+                );
+
+        List<?> studentValues =
+                getBackupValues(
+                        studentsTable,
+                        "students"
+                );
+
+        List<?> rentValues =
+                getBackupValues(
+                        rentTable,
+                        "monthly_rent_details"
+                );
+
+
+        // ==========================================
+        // CLEAR EXISTING DATA
+        // ==========================================
+
+        /*
+         * Delete in this order because
+         * monthly_rent_details references room_details.
+         */
+
+
+
+        jdbcTemplate.update("DELETE FROM monthly_rent_details");
+        jdbcTemplate.update("DELETE FROM students");
+        jdbcTemplate.update("DELETE FROM room_details");
+
+
+        // ==========================================
+// RESTORE ROOM DETAILS
+// ==========================================
+
+        for (Object rowObject : roomValues) {
+
+            List<?> row =
+                    (List<?>) rowObject;
+
+            if (row.size() != 14) {
+
+                throw new IllegalArgumentException(
+                        "Invalid room_details row."
+                );
+            }
+
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO room_details
+                    (
+                        room_no,
+                        room_type,
+                        floor,
+                        beds,
+                        tables,
+                        chairs,
+                        coolers,
+                        monthly_rent,
+                        light_bill,
+                        last_meter_reading,
+                        arrear_bill,
+                        security_amount,
+                        security_amount_status,
+                        occupancy_status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+
+                    toInteger(row.get(0)),
+                    toStringValue(row.get(1)),
+                    toInt(row.get(2)),
+                    toInt(row.get(3)),
+                    toInt(row.get(4)),
+                    toInt(row.get(5)),
+                    toStringValue(row.get(6)),
+                    toInt(row.get(7)),
+                    toStringValue(row.get(8)),
+                    toInt(row.get(9)),
+                    toInt(row.get(10)),
+                    toInt(row.get(11)),
+                    toStringValue(row.get(12)),
+                    toStringValue(row.get(13))
+            );
+        }
+
+
+        // ==========================================
+// RESTORE STUDENTS
+// ==========================================
+
+        for (Object rowObject : studentValues) {
+
+            List<?> row =
+                    (List<?>) rowObject;
+
+            if (row.size() != 15) {
+
+                throw new IllegalArgumentException(
+                        "Invalid students row."
+                );
+            }
+
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO students
+                    (
+                        student_id,
+                        student_name,
+                        contact_no,
+                        aadhar_no,
+                        father_name,
+                        father_contact,
+                        address_line_1,
+                        address_line_2,
+                        city,
+                        state,
+                        pincode,
+                        room_no,
+                        joining_date,
+                        leaving_date,
+                        status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+
+                    toInt(row.get(0)),
+                    toStringValue(row.get(1)),
+                    toStringValue(row.get(2)),
+                    toStringValue(row.get(3)),
+                    toStringValue(row.get(4)),
+                    toStringValue(row.get(5)),
+                    toStringValue(row.get(6)),
+                    toStringValue(row.get(7)),
+                    toStringValue(row.get(8)),
+                    toStringValue(row.get(9)),
+                    toStringValue(row.get(10)),
+                    toInteger(row.get(11)),
+                    toLocalDate(row.get(12)),
+                    toLocalDate(row.get(13)),
+                    toStringValue(row.get(14))
+            );
+        }
+
+
+        // ==========================================
+// RESTORE MONTHLY RENT DETAILS
+// ==========================================
+
+        for (Object rowObject : rentValues) {
+
+            List<?> row =
+                    (List<?>) rowObject;
+
+            if (row.size() != 12) {
+
+                throw new IllegalArgumentException(
+                        "Invalid monthly_rent_details row."
+                );
+            }
+
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO monthly_rent_details
+                    (
+                        Id,
+                        month,
+                        year,
+                        room_no,
+                        rent,
+                        last_reading,
+                        current_reading,
+                        total_light_bill,
+                        arrear_bill,
+                        total_rent,
+                        total_rent_paid,
+                        payment_status
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+
+                    toInt(row.get(0)),
+                    toStringValue(row.get(1)),
+                    toStringValue(row.get(2)),
+                    toInteger(row.get(3)),
+                    toInt(row.get(4)),
+                    toInt(row.get(5)),
+                    toInt(row.get(6)),
+                    toInt(row.get(7)),
+                    toInt(row.get(8)),
+                    toInt(row.get(9)),
+                    toInt(row.get(10)),
+                    toStringValue(row.get(11))
+            );
+        }
+
+
+        // ==========================================
+        // RESET AUTO-INCREMENT VALUES
+        // ==========================================
+
+        resetAutoIncrementValues();
+
+
+        System.out.println(
+                "DATABASE RESTORE: Restore successful"
+        );
+    }
+
+    // ==========================================
+// BACKUP VALUE HELPERS
+// ==========================================
+
+    private List<?> getBackupValues(
+            Map<String, Object> table,
+            String tableName) {
+
+        Object valuesObject =
+                table.get("values");
+
+        if (!(valuesObject instanceof List<?>)) {
+
+            throw new IllegalArgumentException(
+                    "Invalid backup: values missing for table "
+                            + tableName
+            );
+        }
+
+        return (List<?>) valuesObject;
+    }
+
+
+    private String toStringValue(Object value) {
+
+        if (value == null) {
+            return null;
+        }
+
+        return String.valueOf(value);
+    }
+
+
+    private Integer toInteger(Object value) {
+
+        if (value == null) {
+            return null;
+        }
+
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+
+        return Integer.parseInt(
+                String.valueOf(value)
+        );
+    }
+
+
+    private int toInt(Object value) {
+
+        Integer result =
+                toInteger(value);
+
+        if (result == null) {
+            return 0;
+        }
+
+        return result;
+    }
+
+
+    private java.time.LocalDate toLocalDate(Object value) {
+
+        if (value == null) {
+            return null;
+        }
+
+        return java.time.LocalDate.parse(
+                String.valueOf(value)
+        );
+    }
+
+    // ==========================================
+// RESET AUTO INCREMENT
+// ==========================================
+
+    private void resetAutoIncrementValues() {
+
+        Integer maxStudentId =
+                hms_repository.findAllByOrderByRoomNoAscStudentIdAsc()
+                        .stream()
+                        .map(student -> student.studentId)
+                        .max(Integer::compareTo)
+                        .orElse(0);
+
+        Integer maxRentId =
+                mrd_repository.findAllByOrderByRoomNoAscIdAsc()
+                        .stream()
+                        .map(rent -> rent.Id)
+                        .max(Integer::compareTo)
+                        .orElse(0);
+
+
+        // MySQL AUTO_INCREMENT should continue
+        // from the highest restored ID.
+
+        hms_repository.flush();
+
+        mrd_repository.flush();
+
+
+        // Native SQL is intentionally avoided here.
+        // MySQL will automatically adjust AUTO_INCREMENT
+        // when explicit higher IDs are inserted.
+    }
+    
 }
+

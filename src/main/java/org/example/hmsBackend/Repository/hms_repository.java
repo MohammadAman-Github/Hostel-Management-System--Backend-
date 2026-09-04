@@ -16,4 +16,5 @@ public interface hms_repository extends JpaRepository<students, Integer> {
     Optional<students> findByStudentIdIs(Integer studentId);
     void deleteById(int id);
     int countByRoomNoAndStatus(Integer roomNo, String status);
+    List<students> findAllByOrderByRoomNoAscStudentIdAsc();
 }

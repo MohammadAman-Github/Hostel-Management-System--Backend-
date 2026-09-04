@@ -11,4 +11,5 @@ public interface roomDetailsRepository extends JpaRepository<roomDetails, Intege
     Optional<roomDetails> findByRoomNo(Integer roomNo);
     List<roomDetails> findByOccupancyStatus(String occupancyStatus);
     void deleteByRoomNo(int room_no);
+    List<roomDetails> findAllByOrderByRoomNoAsc();
 }

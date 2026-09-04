@@ -43,4 +43,10 @@ public interface hms_service_interface {
 
     String updateStudentPdf(int studentId, MultipartFile file) throws StudentNotFoundException;
     ResponseEntity<Resource> getStudentPdf(int studentId) throws StudentNotFoundException;
+
+    // DATABASE BACKUP & RESTORE
+    java.util.Map<String, Object> backupDatabase();
+
+    void restoreDatabase(java.util.Map<String, Object> backupData);
+
 }

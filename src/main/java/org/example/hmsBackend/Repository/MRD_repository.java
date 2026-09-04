@@ -10,10 +10,33 @@ import java.util.Optional;
 
 @Repository
 public interface MRD_repository extends JpaRepository<monthlyRentDetailsModel, Integer> {
-    Optional<monthlyRentDetailsModel> findMRDByMonthAndYearAndRoomNo(String month, String year, Integer roomNo);
 
+    Optional<monthlyRentDetailsModel> findMRDByMonthAndYearAndRoomNo(
+            String month,
+            String year,
+            Integer roomNo
+    );
 
-    List<monthlyRentDetailsModel> findByMonthAndYear(String month, String year);
-    List<monthlyRentDetailsModel> findByRoomNoAndYear(int room_no, String year);
-    List<monthlyRentDetailsModel> findByRoomNo(Integer roomNo);
+    // Monthly rent for a particular month/year
+    // Ordered by Room No
+    List<monthlyRentDetailsModel> findByMonthAndYearOrderByRoomNoAsc(
+            String month,
+            String year
+    );
+
+    // Monthly rent for a particular room/year
+    // Ordered by ID for deterministic order
+    List<monthlyRentDetailsModel> findByRoomNoAndYearOrderByIdAsc(
+            int room_no,
+            String year
+    );
+
+    // All records for a particular room
+    List<monthlyRentDetailsModel> findByRoomNoOrderByIdAsc(
+            Integer roomNo
+    );
+
+    // All Monthly Rent records
+    // First by Room No, then by ID
+    List<monthlyRentDetailsModel> findAllByOrderByRoomNoAscIdAsc();
 }

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @CrossOrigin(
@@ -238,5 +239,33 @@ public class hms_Controller {
         );
     }
 
+    // ==========================================
+    // DATABASE BACKUP
+    // ==========================================
+
+    @PostMapping("/backup")
+    public ResponseEntity<Map<String, Object>> backupDatabase() {
+
+        Map<String, Object> backup =
+                hms_service.backupDatabase();
+
+        return ResponseEntity.ok(backup);
+    }
+
+
+    // ==========================================
+    // DATABASE RESTORE
+    // ==========================================
+
+    @PostMapping("/restore")
+    public ResponseEntity<String> restoreDatabase(
+            @RequestBody Map<String, Object> backupData) {
+
+        hms_service.restoreDatabase(backupData);
+
+        return ResponseEntity.ok(
+                "Database restored successfully"
+        );
+    }
 
 }
