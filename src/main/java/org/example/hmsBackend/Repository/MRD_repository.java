@@ -39,4 +39,6 @@ public interface MRD_repository extends JpaRepository<monthlyRentDetailsModel, I
     // All Monthly Rent records
     // First by Room No, then by ID
     List<monthlyRentDetailsModel> findAllByOrderByRoomNoAscIdAsc();
+
+    long countByRoomNo(Integer roomNo);
 }

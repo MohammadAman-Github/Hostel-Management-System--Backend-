@@ -376,14 +376,54 @@ public class hms_service implements hms_service_interface {
 
     @Override
     public void deleteRoomDetailsByroomNo(int roomNo) throws RoomNotFoundException {
-        Optional<roomDetails> OptionalroomDetails = roomDetailsRepository.findByRoomNo(roomNo);
-        if (OptionalroomDetails.isEmpty()) {
+
+        Optional<roomDetails> optionalRoomDetails = roomDetailsRepository.findByRoomNo(roomNo);
+
+        if (optionalRoomDetails.isEmpty())
+        {
             throw new RoomNotFoundException("Room No --> " + roomNo + " Not Found");
         }
-        roomDetails room = OptionalroomDetails.get();
+
+
+        // =========================
+        // CHECK ACTIVE STUDENTS
+        // =========================
+
+        long activeStudents = hms_repository.countByRoomNoAndStatus(roomNo, "ACTIVE");
+
+        if (activeStudents > 0)
+        {
+            throw new IllegalStateException("Room " + roomNo
+                            + " cannot be deleted because "
+                            + activeStudents
+                            + " active student"
+                            + (activeStudents > 1 ? "s are" : " is")
+                            + " assigned to this room.");
+        }
+
+
+        // =========================
+        // CHECK MONTHLY RENT HISTORY
+        // =========================
+
+        long rentRecords = mrd_repository.countByRoomNo(roomNo);
+
+        if (rentRecords > 0) {
+
+            throw new IllegalStateException("Room " + roomNo
+                            + " cannot be deleted because monthly rent history exists for this room."
+            );
+        }
+
+
+        // =========================
+        // DELETE ROOM
+        // =========================
+
+        roomDetails room = optionalRoomDetails.get();
+
         roomDetailsRepository.delete(room);
     }
-
 
 
     @Override
@@ -1854,6 +1894,6 @@ public class hms_service implements hms_service_interface {
         // MySQL will automatically adjust AUTO_INCREMENT
         // when explicit higher IDs are inserted.
     }
-    
+
 }
 
