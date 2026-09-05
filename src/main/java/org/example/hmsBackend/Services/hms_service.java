@@ -61,6 +61,7 @@ public class hms_service implements hms_service_interface {
         student.setStudentName(requestDto.getStudentName());
         student.setRoomNo(requestDto.getRoomNo());
         student.setContactNo(requestDto.getContactNo());
+        student.setWhatsappNo(requestDto.getWhatsappNo());
         student.setAadharNo(requestDto.getAadharNo());
         student.setFatherName(requestDto.getFatherName());
         student.setFatherContact(requestDto.getFatherContact());
@@ -134,6 +135,10 @@ public class hms_service implements hms_service_interface {
 
         if (requestDto.getContactNo() != null) {
             s.setContactNo(requestDto.getContactNo());
+        }
+
+        if (requestDto.getWhatsappNo() != null) {
+            s.setWhatsappNo(requestDto.getWhatsappNo());
         }
 
         if (requestDto.getAadharNo() != null) {

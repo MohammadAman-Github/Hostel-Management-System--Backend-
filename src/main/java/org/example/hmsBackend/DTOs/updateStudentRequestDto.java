@@ -10,6 +10,7 @@ public class updateStudentRequestDto {
     public String studentName;
     public Integer roomNo;
     public String contactNo;
+    public String whatsappNo;
     public String aadharNo;
     public String fatherName;
     public String fatherContact;

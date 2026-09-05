@@ -13,6 +13,7 @@ import java.time.LocalDate;
         "studentId",
         "studentName",
         "contactNo",
+        "whatsappNo",
         "aadharNo",
         "fatherName",
         "fatherContact",
@@ -39,6 +40,9 @@ public class students {
 
     @Column(name = "contact_no")
     public String contactNo;
+
+    @Column(name = "whatsapp_no")
+    public String whatsappNo;
 
     @Column(name = "aadhar_no")
     public String aadharNo;
