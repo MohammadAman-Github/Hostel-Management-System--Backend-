@@ -1313,6 +1313,11 @@ public class hms_service implements hms_service_interface {
         ));
 
         studentsSchema.add(Map.of(
+                "column", "whatsapp_no",
+                "value", "TEXT NOT NULL"
+        ));
+
+        studentsSchema.add(Map.of(
                 "column", "aadhar_no",
                 "value", "TEXT NOT NULL"
         ));
@@ -1381,6 +1386,7 @@ public class hms_service implements hms_service_interface {
                     student.studentId,
                     student.studentName,
                     student.contactNo,
+                    student.whatsappNo,
                     student.aadharNo,
                     student.fatherName,
                     student.fatherContact,
@@ -1680,52 +1686,163 @@ public class hms_service implements hms_service_interface {
             List<?> row =
                     (List<?>) rowObject;
 
-            if (row.size() != 15) {
 
-                throw new IllegalArgumentException(
-                        "Invalid students row."
+            // ==========================================
+            // OLD BACKUP FORMAT
+            // 15 columns
+            //
+            // whatsapp_no was not present.
+            // We use contact_no as whatsapp_no.
+            // ==========================================
+
+            if (row.size() == 15) {
+
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO students
+                        (
+                            student_id,
+                            student_name,
+                            contact_no,
+                            whatsapp_no,
+                            aadhar_no,
+                            father_name,
+                            father_contact,
+                            address_line_1,
+                            address_line_2,
+                            city,
+                            state,
+                            pincode,
+                            room_no,
+                            joining_date,
+                            leaving_date,
+                            status
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+
+                        toInt(row.get(0)),
+                        toStringValue(row.get(1)),
+                        toStringValue(row.get(2)),
+
+                        // whatsapp_no = contact_no
+                        toStringValue(row.get(2)),
+
+                        toStringValue(row.get(3)),
+                        toStringValue(row.get(4)),
+                        toStringValue(row.get(5)),
+                        toStringValue(row.get(6)),
+                        toStringValue(row.get(7)),
+                        toStringValue(row.get(8)),
+                        toStringValue(row.get(9)),
+                        toStringValue(row.get(10)),
+                        toInteger(row.get(11)),
+                        toLocalDate(row.get(12)),
+                        toLocalDate(row.get(13)),
+                        toStringValue(row.get(14))
                 );
             }
 
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO students
-                    (
-                        student_id,
-                        student_name,
-                        contact_no,
-                        aadhar_no,
-                        father_name,
-                        father_contact,
-                        address_line_1,
-                        address_line_2,
-                        city,
-                        state,
-                        pincode,
-                        room_no,
-                        joining_date,
-                        leaving_date,
-                        status
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
 
-                    toInt(row.get(0)),
-                    toStringValue(row.get(1)),
-                    toStringValue(row.get(2)),
-                    toStringValue(row.get(3)),
-                    toStringValue(row.get(4)),
-                    toStringValue(row.get(5)),
-                    toStringValue(row.get(6)),
-                    toStringValue(row.get(7)),
-                    toStringValue(row.get(8)),
-                    toStringValue(row.get(9)),
-                    toStringValue(row.get(10)),
-                    toInteger(row.get(11)),
-                    toLocalDate(row.get(12)),
-                    toLocalDate(row.get(13)),
-                    toStringValue(row.get(14))
-            );
+            // ==========================================
+            // NEW BACKUP FORMAT
+            // 16 columns
+            //
+            // 0  student_id
+            // 1  student_name
+            // 2  contact_no
+            // 3  whatsapp_no
+            // 4  aadhar_no
+            // 5  father_name
+            // 6  father_contact
+            // 7  address_line_1
+            // 8  address_line_2
+            // 9  city
+            // 10 state
+            // 11 pincode
+            // 12 room_no
+            // 13 joining_date
+            // 14 leaving_date
+            // 15 status
+            // ==========================================
+
+            else if (row.size() == 16) {
+
+                String whatsappNo =
+                        toStringValue(row.get(3));
+
+
+                // ==========================================
+                // whatsapp_no is NOT NULL in MySQL
+                //
+                // If backup WhatsApp number is empty,
+                // use contact_no instead.
+                // ==========================================
+
+                if (
+                        whatsappNo == null ||
+                                whatsappNo.trim().isEmpty()
+                ) {
+                    whatsappNo =
+                            toStringValue(row.get(2));
+                }
+
+
+                jdbcTemplate.update(
+                        """
+                        INSERT INTO students
+                        (
+                            student_id,
+                            student_name,
+                            contact_no,
+                            whatsapp_no,
+                            aadhar_no,
+                            father_name,
+                            father_contact,
+                            address_line_1,
+                            address_line_2,
+                            city,
+                            state,
+                            pincode,
+                            room_no,
+                            joining_date,
+                            leaving_date,
+                            status
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+
+                        toInt(row.get(0)),
+                        toStringValue(row.get(1)),
+                        toStringValue(row.get(2)),
+                        whatsappNo,
+                        toStringValue(row.get(4)),
+                        toStringValue(row.get(5)),
+                        toStringValue(row.get(6)),
+                        toStringValue(row.get(7)),
+                        toStringValue(row.get(8)),
+                        toStringValue(row.get(9)),
+                        toStringValue(row.get(10)),
+                        toStringValue(row.get(11)),
+                        toInteger(row.get(12)),
+                        toLocalDate(row.get(13)),
+                        toLocalDate(row.get(14)),
+                        toStringValue(row.get(15))
+                );
+            }
+
+
+            // ==========================================
+            // INVALID STUDENT ROW
+            // ==========================================
+
+            else {
+
+                throw new IllegalArgumentException(
+                        "Invalid students row: expected 15 or 16 values, got "
+                                + row.size()
+                );
+            }
         }
 
 
